@@ -1,6 +1,6 @@
 ## Trailblazer Operation - refactor existing Rails codebase - step by step guide. PART I
 
-So you heard about [Trailblazer](http://trailblazer.to/), how it can help organize your code(new and existing one). You read some official guide, and some other articles here and there. You heard how Trailblazer allows you to gently refactor existing legacy app step by step. Today we are going to put this claim to the test. To be exact - we will rewrite class written with service object pattern to be a [Trailblazer operation](http://trailblazer.to/guides/trailblazer/2.0/01-operation-basics.html).
+So you heard about [Trailblazer](http://trailblazer.to/), how it can help organize your code (new and existing one). You read some official guide and some other articles here and there. You heard how Trailblazer allows you to gently refactor existing legacy app step by step. Today we are going to put this claim to the test. To be exact - we will rewrite class written with service object pattern to be a [Trailblazer operation](http://trailblazer.to/guides/trailblazer/2.0/01-operation-basics.html).
 
 #### Brief introduction to the app at hand
 In our app there are challenges to which users can join. Participation is a model holding info about user... participation in given challenge. Business logic behind this process is encapsulated in service object invoked in [Grape](https://github.com/ruby-grape/grape#what-is-grape) endpoint. Though we don't have unit tests for service object, we have integration tests for participations endpoint on which we will rely for now (later we will write unit tests for operation and possibly skinny down endpoint integration tests as well). Here is how it all looks like at the moment:
@@ -73,7 +73,7 @@ Participations create service object:
   end
 ```
 
-Details of business logic contained here are really not that important but we have a few points worth noting:
+Details of business logic contained here are really not that important, but we have a few points worth noting:
 - we have flow control based on exceptions:
 ```ruby
 raise JoiningBlockedError unless can_join?
@@ -92,9 +92,9 @@ raise DuplicatedParticipationError if user_duplicated_participation?
   ```
 - as a result this service object returns participation record.
 
-Below is Grape endpoint which runs code above. If You are not familiar with Grape don't worry, it doesn't really make a difference in our case - it could be as well regular rails controller.
+Below is Grape endpoint, which runs code above. If You are not familiar with Grape, don't worry, it doesn't really make a difference in our case - it could be as well regular rails controller.
 ```ruby
-  post do
+  begin
     participation = Api::Challenges::Participations::Create.call(
       declared(params).merge(user_id: current_user.id)
     )
@@ -118,11 +118,11 @@ Notice we are specifying TB version 2.0.3. This is quite important as TB is unde
 
 ##### Iteration I: operation - let it just work
 
-Following TB convention we organize our file structure by domain(unlike in Rails where it is by technology - for example, models and controllers directories). So for the beginning, let's create our li'l cosy spot for our new operation:
+Following TB convention we organize our file structure by domain (unlike in Rails where it is by technology - for example, models and controllers directories). So for the beginning, let's create our li'l cosy spot for our new operation:
 ```
 app/concepts/challenges/participations/operations/create.rb
 ```
-It is TB convention to put all its code into ```app/concepts``` directory. Then we divide it by domain concepts ```challenges/participations```. Finally we create directories for related TB concepts - in our case just ```operations```.
+It is TB convention, to put all its code into ```app/concepts``` directory. Then we divide it by domain concepts ```challenges/participations```. Finally we create directories for related TB concepts - in our case just ```operations```.
 
 
 Now lets define empty trailblazer operation class with one almighty step:
@@ -138,7 +138,7 @@ end
 Now we replace service object in endpoint with our newly created operation:
 
 ```ruby
-  post do
+  begin
     result = ::Challenges::Participations::Create.(
       declared(params).merge(user_id: current_user.id)
     )
@@ -164,7 +164,7 @@ result = ::Challenges::Participations::Create.(
 )
 participation = result['model']
 ```
-In this result object, we intend to store participation record under ```'model'``` key.
+In this result object we intend to store participation record under ```'model'``` key.
 Of course, specs for participations endpoint are all red now as we yet do not have any logic in it. So, back to the operation - let's copy a few things from service object:
 - ```process``` method body to ```do_everything!``` step in operation
 - exception constants ```JoiningBlockedError``` and ```DuplicatedParticipationError```
@@ -222,7 +222,7 @@ class Challenges::Participations::Create < Trailblazer::Operation
 end
 ```
 
-Looks ugly and promising. Unfortunately there are a few problems
+Looks ugly and promising! Unfortunately there are a few problems:
 1. Our service object has constructor ```initialize``` and attribute reader which our operation lacks. Thus all private methods won't have access to ```params``` instance variable. To solve this we resort to just explicitly passing params to every method. Like this:
 ```ruby
 raise JoiningBlockedError unless can_join?(params)
@@ -232,17 +232,17 @@ def can_join?(params)
 ```
 It's not pretty but it works and that is what we aim for now ;)
 
-2. Service object has return value which is participation at the end of the process method. In case of TB operation step, this variable will just evaluate to true at the and of the step method to indicate step success or failure.
+2. Service object has return value, which is participation at the end of the process method. In case of TB operation step, this variable will just evaluate to true at the and of the step method, to indicate step success or failure.
 In TB each step can write to the options object and in the end this object will be available in the result of the operation invocation. This is the TB way to communicate operation internal state between steps, which we do by passing it as the first argument to each step method we define:
 ```ruby
 def do_everything!(options, params:)
 ```
-In step we can write to options object, in our case it will be as follows:
+In step we can write to options object. In our case it will be as follows:
 ```ruby
 options['model'] = participation
 ```
 
-3. Everything looks fine and dandy but when we run related specs we have little nasty surprise:
+3. Everything looks fine and dandy, but when we run related specs we have little nasty surprise:
 ```ruby
 NameError:
   uninitialized constant Challenges::Comments
@@ -308,5 +308,5 @@ class Challenges::Participations::Create < Trailblazer::Operation
 end
 ```
 
-Specs are green, thus first iteration of our refactor is done. For now there is not much a difference between good old service object and operation. You could even say its worse than before and You would be probably right. But we are far from over :) In the ongoing post we will slim down our __FATTY__ ```do_everything!``` step by dividing it to more smaller steps.
+Specs are green, thus first iteration of our refactor is done. For now there is not much a difference between our good old service and operation. You could even say it's worse than before and You would be probably right. But we are far from over :) In the ongoing post we will slim down our __FATTY__ ```do_everything!``` step by dividing it to more smaller steps.
 In the process we will also get rid of exception based flow control. [Go to Part II](#)
